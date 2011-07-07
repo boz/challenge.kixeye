@@ -4,9 +4,11 @@
 #include<getopt.h>
 #include<netinet/in.h>
 #include<strings.h>
+#include<stdbool.h>
 
 #include "macros.h"
 #include "reactor.h"
+#include "client_handler.h"
 
 static struct {
   int port;
@@ -66,6 +68,15 @@ static int initialize_socket() {
 }
 
 static void accept_connection(int fd, void * user) {
+  int cfd;
+  struct sockaddr addr;
+  socklen_t addrlen;
+
+  if((cfd = accept(fd,&addr,&addrlen)) < 0) {
+    perror("accept");
+    return;
+  }
+  client_handler_create(cfd);
 }
 
 int main(int argc, char *argv[]) {
@@ -77,5 +88,6 @@ int main(int argc, char *argv[]) {
   reactor_initialize();
   reactor_add_listener(fd,accept_connection,0);
 
+  reactor_run();
   exit(0);
 }
