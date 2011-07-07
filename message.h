@@ -21,5 +21,8 @@ typedef struct {
 
 message_t * message_parse_raw(message_t * message);
 size_t message_body_size(const message_t * message);
+int message_read_partial(int fd, message_t * message, size_t offset);
+int message_write(int fd, message_t * message);
+
 
 #endif /* KIXEYE_MESSAGE_H */

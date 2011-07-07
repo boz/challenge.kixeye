@@ -85,17 +85,10 @@ static void client_handler_remove_client(client_state_t * client) {
 static void handle_incoming_data(int fd, void * data) {
   client_state_t * client = data;
 
-  size_t nread, nleft;
+  int nread = message_read_partial(fd, &client->incoming, client->incoming_read);
 
-  if(client->incoming_read < sizeof(client->incoming.header)) {
-    /* haven't read the length yet */
-    nleft = sizeof(client->incoming.header) - client->incoming_read;
-  } else {
-    /* reading the message buffer */
-    nleft = client->incoming.header.size - client->incoming_read;
-  }
+  DEBUG("fd %d nread %d iread %lu msg %s",fd,nread,client->incoming_read,client->incoming.buffer);
 
-  nread = read(fd,(char*)&client->incoming + client->incoming_read, nleft);
   if(nread <= 0) {
     client_handler_remove_client(client);
     return;
@@ -103,38 +96,23 @@ static void handle_incoming_data(int fd, void * data) {
 
   client->incoming_read += nread;
 
-  /* more to read */
-  if(nread != nleft) {
-    return;
+  if(client->incoming.header.size == client->incoming_read) {
+    /* message is complete */
+    message_t * message = message_parse_raw(&client->incoming);
+    client_handler_apply_message(client,message);
+    client->incoming_read = 0;
+    bzero(&client->incoming,sizeof(client->incoming));
   }
-
-  /* read the length */
-  if(client->incoming_read == sizeof(client->incoming.header)) {
-    client->incoming.header.size = ntohl(client->incoming.header.size);
-    client->incoming.header.type = ntohl(client->incoming.header.type);
-
-    /* validate length */
-    if(client->incoming.header.size  > sizeof(client) ||
-       client->incoming.header.size <= sizeof(client->incoming.header.size)) {
-      client_handler_remove_client(client);
-    }
-    return;
-  }
-
-  /* message is complete */
-  message_t * message = message_parse_raw(&client->incoming);
-  client_handler_apply_message(client,message);
-  client->incoming_read = 0;
-  bzero(&client->incoming,sizeof(client->incoming));
 }
 
 bool client_handler_create(int fd) {
   FOR_EACH_CLIENT(client) {
     if(client->state == ss_unused) {
-      reactor_add_listener(fd,handle_incoming_data,client);
       client->fd      = fd;
       client->state   = ss_connecting;
       client->name[0] = 0;
+      client->incoming_read = 0;
+      reactor_add_listener(fd,handle_incoming_data,client);
       return true;
     }
   }
