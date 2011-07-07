@@ -3,6 +3,7 @@
 #include<string.h>
 #include<unistd.h>
 #include<stdio.h>
+#include<stdarg.h>
 
 #include "client_handler.h"
 #include "reactor.h"
@@ -54,15 +55,6 @@ static client_handler_dispatch_t handlers[3] = {
        (var)->cb; \
        (var)++)
 
-static void connecting_on_connect(client_state_t * client, message_t * message) {
-  size_t len = strlen(message->buffer);
-  if(len > sizeof(client->name) - 1)
-    len = sizeof(client->name) - 1;
-  strncpy(client->name,message->buffer,len);
-  client->name[len] = 0;
-  client->state = ss_connected;
-}
-
 static void do_broadcast_message(message_t * message, client_state_t * origin) {
   FOR_EACH_CLIENT(client) {
     if(client->state == ss_connected && client != origin) {
@@ -71,14 +63,34 @@ static void do_broadcast_message(message_t * message, client_state_t * origin) {
   }
 }
 
-static void connected_on_broadcast(client_state_t * client, message_t * message) {
-  char buf[MESSAGE_BUFFER_SIZE_MAX + 1];
-  if(snprintf(buf,sizeof(buf),"%s: %s",client->name,message->buffer) > sizeof(buf))
-    buf[sizeof(buf) - 1] = 0;
+static void broadcast_message_format(client_state_t * client ,
+                                     message_type_t   type   ,
+                                     const char * fmt, ...   ){
 
-  message_t broadcast;
-  message_construct_string(&broadcast,mt_broadcast,buf);
-  do_broadcast_message(&broadcast,client);
+  char buf[sizeof(client->incoming.buffer)] = {0};
+  va_list argp;
+  message_t message;
+
+  va_start(argp,fmt);
+  vsnprintf(buf,sizeof(buf),fmt,argp);
+  va_end(argp);
+
+  message_construct_string(&message,type,buf);
+  do_broadcast_message(&message,client);
+}
+
+static void connecting_on_connect(client_state_t * client, message_t * message) {
+  size_t len = strlen(message->buffer);
+  if(len > sizeof(client->name) - 1)
+    len = sizeof(client->name) - 1;
+  strncpy(client->name,message->buffer,len);
+  client->name[len] = 0;
+  client->state = ss_connected;
+  broadcast_message_format(client,mt_broadcast,"--=[ %s signed on ]=--",client->name);
+}
+
+static void connected_on_broadcast(client_state_t * client, message_t * message) {
+  broadcast_message_format(client,mt_broadcast,"%s: %s",client->name, message->buffer);
 }
 
 static void client_handler_apply_message(client_state_t * client, message_t * message) {
@@ -94,12 +106,7 @@ static void client_handler_remove_client(client_state_t * client) {
   DEBUG("removing client handler");
 
   if(client->state == ss_connected) {
-    char buf[128];
-    if(snprintf(buf,sizeof(buf),"%s signed off",client->name) > sizeof(buf))
-      buf[sizeof(buf) - 1] = 0;
-    message_t broadcast;
-    message_construct_string(&broadcast,mt_broadcast,buf);
-    do_broadcast_message(&broadcast,client);
+    broadcast_message_format(client,mt_broadcast,"--=[ %s signed off ]=--",client->name);
   }
 
   close(client->fd);
