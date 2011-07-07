@@ -63,7 +63,22 @@ static void connecting_on_connect(client_state_t * client, message_t * message) 
   client->state = ss_connected;
 }
 
+static void do_broadcast_message(message_t * message, client_state_t * origin) {
+  FOR_EACH_CLIENT(client) {
+    if(client->state == ss_connected && client != origin) {
+      message_write(client->fd,message);
+    }
+  }
+}
+
 static void connected_on_broadcast(client_state_t * client, message_t * message) {
+  char buf[MESSAGE_BUFFER_SIZE_MAX + 1];
+  if(snprintf(buf,sizeof(buf),"%s: %s",client->name,message->buffer) > sizeof(buf))
+    buf[sizeof(buf) - 1] = 0;
+
+  message_t broadcast;
+  message_construct_string(&broadcast,mt_broadcast,buf);
+  do_broadcast_message(&broadcast,client);
 }
 
 static void client_handler_apply_message(client_state_t * client, message_t * message) {
@@ -77,6 +92,16 @@ static void client_handler_apply_message(client_state_t * client, message_t * me
 
 static void client_handler_remove_client(client_state_t * client) {
   DEBUG("removing client handler");
+
+  if(client->state == ss_connected) {
+    char buf[128];
+    if(snprintf(buf,sizeof(buf),"%s signed off",client->name) > sizeof(buf))
+      buf[sizeof(buf) - 1] = 0;
+    message_t broadcast;
+    message_construct_string(&broadcast,mt_broadcast,buf);
+    do_broadcast_message(&broadcast,client);
+  }
+
   close(client->fd);
   reactor_remove_listener(client->fd);
   bzero(client, sizeof(*client));
@@ -96,9 +121,8 @@ static void handle_incoming_data(int fd, void * data) {
 
   client->incoming_read += nread;
 
-  if(client->incoming.header.size == client->incoming_read) {
-    /* message is complete */
-    message_t * message = message_parse_raw(&client->incoming);
+  message_t * message;
+  if((message = message_parse_raw(&client->incoming,client->incoming_read))) {
     client_handler_apply_message(client,message);
     client->incoming_read = 0;
     bzero(&client->incoming,sizeof(client->incoming));

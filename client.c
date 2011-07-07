@@ -18,16 +18,16 @@ static struct {
 };
 
 static void usage(const char * name) {
-  fprintf(stderr,"Usage: %s [-p port] [-h host] [-n name]\n",name);
+  fprintf(stderr,"Usage: %s [-p port] [-a address] [-n name]\n",name);
   exit(1);
 }
 
 static void do_getopt(int argc, char *argv[]) {
   int c;
-  while((c = getopt(argc,argv,"hp:h:n:")) != -1) {
+  while((c = getopt(argc,argv,"hp:a:n:")) != -1) {
     switch(c) {
      case 'p': config.port = atoi(optarg)                      ; break;
-     case 'h': strncpy(config.host,optarg,sizeof(config.host)) ; break;
+     case 'a': strncpy(config.host,optarg,sizeof(config.host)) ; break;
      case 'n': strncpy(config.name,optarg,sizeof(config.name)) ; break;
      default : usage(*argv)               ; break;
     }
@@ -69,49 +69,38 @@ static void handle_incoming_message(int fd, void * user) {
 
   incoming_read += nread;
 
-  if(incoming.header.size == incoming_read) {
+  message_t * message;
+  if((message = message_parse_raw(&incoming,incoming_read))) {
     /* message is complete */
-    message_t * message = message_parse_raw(&incoming);
-    printf("%s",message->buffer);
+    printf(">>> %s\n",message->buffer);
     incoming_read = 0;
     bzero(&incoming,sizeof(incoming));
   }
 }
 
 static void handle_terminal_input(int fd, void * user) {
-  message_t message;
+  int  server_fd = *(int*)user;
+  char buffer[128];
   int nread;
 
-  if((nread = read(fd,&message.buffer,sizeof(message.buffer) - 1)) < 0) {
+  if((nread = read(fd,buffer,sizeof(buffer))) < 0) {
     perror("read");
     exit(1);
   }
-
-  message.buffer[nread] = 0;
-  message.header.type = mt_broadcast;
-  message.header.size = sizeof(message.header) + strlen(message.buffer);
-  DEBUG("GOT MESSAGE %s",message.buffer);
-  message_write(fd,&message);
+  message_write_string(server_fd,mt_broadcast,buffer);
 }
 
 int main(int argc, char *argv[]) {
   int fd;
-  message_t message;
 
   do_getopt(argc,argv);
   fd = initialize_socket();
 
   reactor_initialize();
   reactor_add_listener(fd,handle_incoming_message,0);
-  reactor_add_listener(STDIN_FILENO,handle_terminal_input,0);
+  reactor_add_listener(STDIN_FILENO,handle_terminal_input,&fd);
 
-  strncpy(message.buffer,config.name,sizeof(message.buffer));
-  message.header.type = mt_connect;
-  message.header.size = sizeof(message.header) + strlen(message.buffer);
-  if(message_write(fd,&message)<0) {
-    perror("write");
-    exit(1);
-  }
+  message_write_string(fd,mt_connect,config.name);
 
   reactor_run();
   exit(0);
