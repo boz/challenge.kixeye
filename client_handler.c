@@ -2,10 +2,12 @@
 #include<stdlib.h>
 #include<string.h>
 #include<unistd.h>
+#include<stdio.h>
 
 #include "client_handler.h"
 #include "reactor.h"
 #include "message.h"
+#include "macros.h"
 
 #define MAX_CLIENTS      32
 
@@ -74,8 +76,9 @@ static void client_handler_apply_message(client_state_t * client, message_t * me
 }
 
 static void client_handler_remove_client(client_state_t * client) {
-  reactor_remove_listener(client->fd);
+  DEBUG("removing client handler");
   close(client->fd);
+  reactor_remove_listener(client->fd);
   bzero(client, sizeof(*client));
 }
 
@@ -129,7 +132,9 @@ bool client_handler_create(int fd) {
   FOR_EACH_CLIENT(client) {
     if(client->state == ss_unused) {
       reactor_add_listener(fd,handle_incoming_data,client);
-      client->state = ss_connecting;
+      client->fd      = fd;
+      client->state   = ss_connecting;
+      client->name[0] = 0;
       return true;
     }
   }

@@ -63,6 +63,7 @@ static void recalculate_maxfd() {
 void reactor_remove_listener(int fd) {
   FOR_EACH_LISTENER(listener) {
     if(listener->fd == fd) {
+			DEBUG("removing fd %d",fd);
 			bzero(listener,sizeof(listener_t));
 			FD_CLR(fd,&reactor.readset);
       if(reactor.maxfd == fd)
@@ -82,7 +83,7 @@ void reactor_run() {
     }
     FOR_EACH_LISTENER(listener) {
       if(!reactor.running) break;
-      if(FD_ISSET(listener->fd,&readset)) {
+      if(listener->cb && FD_ISSET(listener->fd,&readset)) {
         listener->cb(listener->fd,listener->user);
       }
     }

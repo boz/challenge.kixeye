@@ -1,19 +1,9 @@
 #ifndef KIXEYE_MACROS_H
 # define KIXEYE_MACROS_H
 
-#ifndef TRUE
-# define TRUE 1
-#endif
-
-#ifndef FALSE
-# define FALSE 0
-#endif
-
-#define assert_syscall(x) do  {\
-  if((x) < 0) { \
-    perror(0); \
-    exit(1);\
-  } \
+#define DEBUG(message, ...) do{ fprintf(stderr,"%s:%s(): ",__FILE__,__func__);\
+	   fprintf(stderr, message, ##__VA_ARGS__ ); \
+	   fprintf(stderr, "\n"); \
 } while(0);
 
 #endif /* KIXEYE_MACROS_H */
